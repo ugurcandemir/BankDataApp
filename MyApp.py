@@ -69,6 +69,15 @@ with col2:
 
 
 
+# Function to clean and convert string numbers
+def clean_numeric_columns(df):
+    for col in df.columns:
+
+        if col != "Yıllar":
+            df[col] = df[col].astype(str).str.replace(".", "", regex=False)  # remove dots
+            df[col] = pd.to_numeric(df[col], errors='coerce')  # convert to numbers (NaN if fails)
+    return df
+
 
 def filtered_chart_section(df, key_prefix="chart"):
     st.markdown("### 📋 Tablo")
@@ -138,8 +147,15 @@ def run_common_size_analysis():
     # Load both datasets
     df_bilanco = pd.read_excel("ing_balance.xlsx", index_col=0)
     df_gelir = pd.read_excel("ing_income.xlsx", index_col=0)
+
+    # Drop unnecessary column if it exists
     if "Unnamed: 1" in df_gelir.columns:
         df_gelir = df_gelir.drop(columns=["Unnamed: 1"])
+
+    # Apply cleaning to both datasets
+    df_bilanco = clean_numeric_columns(df_bilanco)
+    df_gelir = clean_numeric_columns(df_gelir)
+
 
     # ----------- BİLANÇO ANALİZİ -----------
     st.markdown("### 📘 Bilanço")
@@ -196,8 +212,14 @@ def run_trend_analysis():
     # ---- BİLANÇO TREND ANALİZİ ----
     # Load balance sheet data (assumes first column is "Yıllar")
     df_bilanco = pd.read_excel("ing_balance.xlsx")
+
+    # Apply cleaning to both datasets
+    df_bilanco = clean_numeric_columns(df_bilanco)
+
     # Pivot: set "Yıllar" as index and then transpose so that rows = financial items, columns = years.
     df_bilanco_pivot = df_bilanco.set_index("Yıllar").T
+
+    
 
     # Get the list of available years (now from the columns)
     bilanco_years = df_bilanco_pivot.columns.tolist()
@@ -238,6 +260,9 @@ def run_trend_analysis():
         df_gelir = df_gelir.drop(columns=["Unnamed: 1"])
     df_gelir_pivot = df_gelir.set_index("Yıllar").T
 
+    # Apply cleaning to both datasets
+    df_gelir = clean_numeric_columns(df_gelir)
+
     gelir_years = df_gelir_pivot.columns.tolist()
     selected_gelir_years = st.multiselect(
         "Görüntülenecek Yıllar (Gelir Tablosu)",
@@ -277,6 +302,10 @@ def run_ratio_analysis_dashboard():
     df = pd.read_excel("ing_balance.xlsx")
     df2 = pd.read_excel("ing_income.xlsx")
 
+    # Apply cleaning to both datasets
+    df = clean_numeric_columns(df)
+    df2 = clean_numeric_columns(df2)
+
     # Clean column names by stripping whitespace
     df.columns = df.columns.str.strip()
     df2.columns = df2.columns.str.strip()
@@ -286,9 +315,9 @@ def run_ratio_analysis_dashboard():
         df2 = df2.drop(columns=["Unnamed: 1"])
 
     # --- Compute ratios ---
-    df["Faktoring/Maddi"] = df["Faktoring Alacakları"] / df["MADDİ DURAN VARLIKLAR (Net)"]
-    df["Krediler/Finansal"] = df["KREDİLER (Net)"] / df["Finansal Varlıklar (Net)"]
-    df["Nakit/Krediler"] = df["Nakit ve Nakit Benzerleri"] / df["KREDİLER (Net)"]
+    df["FinVarlıklar/Varlıklar"] = df["Finansal Varlıklar (Net)"] / df["Varlıklar Toplamı"]
+    df["FinVarlıklar/Özkaynaklar"] = df["Finansal Varlıklar (Net)"] / df["Özkaynaklar"]
+    df["Mevduat/Varlıklar"] = df["Mevduat"] / df["Varlıklar Toplamı"]
 
     latest = df.iloc[-1]
     previous = df.iloc[-2]
@@ -297,18 +326,18 @@ def run_ratio_analysis_dashboard():
     col1, col2, col3 = st.columns(3)
     col1.metric(
         "Faktoring / Maddi Duran Varlıklar",
-        f"{latest['Faktoring/Maddi']:.2f}",
-        f"{latest['Faktoring/Maddi'] - previous['Faktoring/Maddi']:+.2f}"
+        f"{latest['FinVarlıklar/Varlıklar']:.2f}",
+        f"{latest['FinVarlıklar/Varlıklar'] - previous['FinVarlıklar/Varlıklar']:+.2f}"
     )
     col2.metric(
         "Krediler / Finansal Varlıklar",
-        f"{latest['Krediler/Finansal']:.2f}",
-        f"{latest['Krediler/Finansal'] - previous['Krediler/Finansal']:+.2f}"
+        f"{latest['FinVarlıklar/Özkaynaklar']:.2f}",
+        f"{latest['FinVarlıklar/Özkaynaklar'] - previous['FinVarlıklar/Özkaynaklar']:+.2f}"
     )
     col3.metric(
         "Nakit / Krediler",
-        f"{latest['Nakit/Krediler']:.2f}",
-        f"{latest['Nakit/Krediler'] - previous['Nakit/Krediler']:+.2f}"
+        f"{latest['Mevduat/Varlıklar']:.2f}",
+        f"{latest['Mevduat/Varlıklar'] - previous['Mevduat/Varlıklar']:+.2f}"
     )
 
     # --- Ratio Charts Side-by-Side ---
@@ -316,19 +345,19 @@ def run_ratio_analysis_dashboard():
     chart_col1, chart_col2 = st.columns(2)
 
     with chart_col1:
-        st.plotly_chart(px.line(df, x="Yıllar", y="Faktoring/Maddi", title="Faktoring / Maddi Duran Varlıklar"), use_container_width=True)
+        st.plotly_chart(px.line(df, x="Yıllar", y="FinVarlıklar/Varlıklar", title="Faktoring / Maddi Duran Varlıklar"), use_container_width=True)
 
     with chart_col2:
-        st.plotly_chart(px.line(df, x="Yıllar", y="Krediler/Finansal", title="Krediler / Finansal Varlıklar"), use_container_width=True)
+        st.plotly_chart(px.line(df, x="Yıllar", y="FinVarlıklar/Özkaynaklar", title="Krediler / Finansal Varlıklar"), use_container_width=True)
 
-    st.plotly_chart(px.line(df, x="Yıllar", y="Nakit/Krediler", title="Nakit / Krediler"), use_container_width=True)
+    st.plotly_chart(px.line(df, x="Yıllar", y="Mevduat/Varlıklar", title="Nakit / Krediler"), use_container_width=True)
 
     # --- Data Table ---
     st.markdown("### 📊 Tüm Rasyo Verileri")
-    st.dataframe(df[["Yıllar", "Faktoring/Maddi", "Krediler/Finansal", "Nakit/Krediler"]].style.format({
-        "Faktoring/Maddi": "{:.2f}",
-        "Krediler/Finansal": "{:.2f}",
-        "Nakit/Krediler": "{:.2f}"
+    st.dataframe(df[["Yıllar", "FinVarlıklar/Varlıklar", "FinVarlıklar/Özkaynaklar", "Mevduat/Varlıklar"]].style.format({
+        "FinVarlıklar/Varlıklar": "{:.2f}",
+        "FinVarlıklar/Özkaynaklar": "{:.2f}",
+        "Mevduat/Varlıklar": "{:.2f}"
     }))
 
     
@@ -451,7 +480,7 @@ def run_housing_valuation():
     st.write("Konut fiyat tahmin modellerinin gösterileceği alan.")
 
 def run_akbilmis_ai_assistant():
-    st.subheader("🤖 AK Bilmiş")
+    st.subheader("🤖 Turuncu Zeka")
     st.write("Akbank için bilgi veren yapay zeka asistanı.")
 
 def run_macro_dashboard():
@@ -470,7 +499,7 @@ main_section = st.sidebar.radio("📂 Modül Seçin", [
     "🚨 Fraud",
     "🎯 Ürün Bul",
     "🏘️ Konut Fiyatlama",
-    "🤖 AK Bilmiş",
+    "🤖 Turuncu Zeka",
     "📉 Makro Bankam"
 ])
 
@@ -484,12 +513,14 @@ if main_section == "📊 Tablolarım":
 
     if sub_tab == "Bilanço":
         df = pd.read_excel("ing_balance.xlsx")
+        df = clean_numeric_columns(df)
         filtered_chart_section(df, key_prefix="bilanco")
 
     elif sub_tab == "Gelir Tablosu":
         df = pd.read_excel("ing_income.xlsx")
         if "Unnamed: 1" in df.columns:
             df = df.drop(columns=["Unnamed: 1"])
+        df = clean_numeric_columns(df)
         filtered_chart_section(df, key_prefix="gelir")
 
 elif main_section == "📈 Analizlerim":
@@ -520,7 +551,7 @@ elif main_section == "🎯 Ürün Bul":
 elif main_section == "🏘️ Konut Fiyatlama":
     run_housing_valuation()
 
-elif main_section == "🤖 AK Bilmiş":
+elif main_section == "🤖 Turuncu Zeka":
     run_akbilmis_ai_assistant()
 
 elif main_section == "📉 Makro Bankam":
